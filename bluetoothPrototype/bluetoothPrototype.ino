@@ -75,34 +75,33 @@ void error(const __FlashStringHelper*err) {
 Adafruit_BNO055 bno = Adafruit_BNO055(55);
 
 // button that turns data transmission on/off
-int control_toggle_button_pin = 12;
+int controlSwitchPin = 12;
 
 // button used for throwing stuff in mariokart
-int shooting_button_pin = 10;
+int shootingButtonPin = 10;
 // button used for drifting in mariokart
-int drifting_button_pin = 9;
+int driftingButtonPin = 9;
 
-int loop_count = 0;
+
 
 // is the sensor initialized?
 boolean initialized = false; 
 // data transmission on/off
-boolean controls_active = false;
+boolean volatile controlsActive = false;
 
-boolean shooting_button_pressed = false;
-boolean drifting_button_pressed = false;
+boolean volatile shootingPressed = false;
+boolean volatile driftingPressed = false;
 
-// AT command string that will be sent via BLE
+// String passed as ATcommand via BLE
 String bleString = "";
 
-
 // gyro values and offsets
-float gyro_x1 = 0;
-float gyro_y1 = 0;
-float gyro_z1 = 0;
-float offset_x1 = 0;
-float offset_y1 = 0;
-float offset_z1 = 0;
+float gyroX = 0;
+float gyroY = 0;
+float gyroZ = 0;
+float offsetX = 0;
+float offsetY = 0;
+float offsetZ = 0;
 
 /**************************************************************************/
 /*!
@@ -130,17 +129,18 @@ void setup(void)
   Serial.println("BNO055 running");
 
   // Set up everything needed for the Freddy controller
+  // input_pullup mode means that the pin is LOW if the button is pressed, and HIGH if not pressed
+  pinMode(controlSwitchPin, INPUT_PULLUP);
+  pinMode(shootingButtonPin, INPUT_PULLUP);
+  pinMode(driftingButtonPin, INPUT_PULLUP);
   
-  pinMode(control_toggle_button_pin, INPUT_PULLUP);
-  controls_active = !digitalRead(control_toggle_button_pin);
+  controlsActive = !digitalRead(controlSwitchPin);
 
   // Attach an interrupt to turn controls on
-  attachInterrupt(control_toggle_button_pin, toggle_controls, CHANGE);
+  attachInterrupt(controlSwitchPin, toggleControls, CHANGE);
 
-  pinMode(shooting_button_pin, INPUT_PULLUP);
-  pinMode(drifting_button_pin, INPUT_PULLUP);
-  attachInterrupt(shooting_button_pin, queue_shooting_button, RISING);
-  attachInterrupt(drifting_button_pin, toggle_drifting_button, FALLING);
+  attachInterrupt(shootingButtonPin, shoot, FALLING);
+  attachInterrupt(driftingButtonPin, toggleDriftingButton, CHANGE);
 
   /* Initialise the bluetooth module */
   Serial.print(F("Initialising the Bluefruit LE module: "));
@@ -200,11 +200,11 @@ void setup(void)
 */
 /**************************************************************************/
 void loop(void){
-  
+  int loopCount = 0;
   getSensorData();
   
 
-  if(controls_active) {   
+  if(controlsActive) {   
     // Mouse movements, didn't work so well, mouse movements were lagging..
     /*
     if (gyro_z1 > 15) {
@@ -222,15 +222,15 @@ void loop(void){
 
   }
   // print sensor data
-  if(loop_count % 8 == 0) {
-    Serial.print("gyro x1: "); Serial.print(gyro_x1);
-    Serial.print(" - gyro y1: "); Serial.print(gyro_y1); 
-    Serial.print(" - gyro z1: "); Serial.print(gyro_z1); 
-    Serial.print(" - active: "); Serial.println(controls_active); // Serial.print(" - acc. y: "); Serial.println(accel_y);
+  if(loopCount % 10 == 0) {
+    Serial.print("gyro x: "); Serial.print(gyroX);
+    Serial.print(" - gyro y: "); Serial.print(gyroY); 
+    Serial.print(" - gyro z: "); Serial.print(gyroZ); 
+    Serial.print(" - active: "); Serial.println(controlsActive); // Serial.print(" - acc. y: "); Serial.println(accel_y);
   }
   
   
-  loop_count += 1;
+  loopCount += 1;
 
   delay(80);
 
@@ -238,45 +238,51 @@ void loop(void){
 
 
 
-void toggle_controls() {
-  controls_active = !digitalRead(control_toggle_button_pin);
+void toggleControls() {
+  controlsActive = !digitalRead(controlSwitchPin);
+  // every time we switch on/off the controls, we want to "calibrate"
+  // again
   initialized = false;
 }
 
-void queue_shooting_button() {
-  shooting_button_pressed = true;
+void shoot() {
+  
+  shootingPressed = true;
 }
-void toggle_drifting_button() {
-  drifting_button_pressed = !drifting_button_pressed;
+
+void toggleDriftingButton() {
+  
+  driftingPressed = !driftingPressed;
 }
 
 void initializeSensors(){
   Serial.println("initializing the gyros");
       
   // offset_x1 = gyro_x1;
-  offset_y1 = gyro_y1;
-  offset_z1 = gyro_z1;
-  offset_x1 = gyro_x1;
+  offsetY = gyroY;
+  offsetZ = gyroZ;
+  offsetX = gyroX;
   
   initialized = true;
 }
+
 void getSensorData(){
   /* Get a new sensor event */ 
   sensors_event_t event; 
   bno.getEvent(&event);
   
   // gyro_x1 = event.orientation.x;
-  gyro_y1 = event.orientation.y;
-  gyro_z1 = event.orientation.z;
-  gyro_x1 = event.orientation.x;
+  gyroY = event.orientation.y;
+  gyroZ = event.orientation.z;
+  gyroX = event.orientation.x;
 
    if(!initialized){
       initializeSensors();
    }
   // substract offset:
-  gyro_x1 = gyro_x1 - offset_x1;
-  gyro_y1 = gyro_y1 - offset_y1;
-  gyro_z1 = gyro_z1 - offset_z1;
+  gyroX = gyroX - offsetX;
+  gyroY = gyroY - offsetY;
+  gyroZ = gyroZ - offsetZ;
 }
 
 void createBLEString(){
@@ -284,7 +290,7 @@ void createBLEString(){
   bleString = "AT+BLEKEYBOARDCODE=00-00"; // string always has to start with 00-00, first byte: modifier (00), second byte always 00
   // using hex-codes for keyboard commands
   // A = 0x04
-  // C = 0x05
+  // C = 0x06
   // D = 0x07
   // S = 0x16
   // V = 0x19
@@ -298,31 +304,31 @@ void createBLEString(){
   // y for forward and backwards (in this prototype positive values = backwards, negative = forwards)
   // z for left and right (in this prototype positive = right, negative = left)
 
-  int thresh = 15; // threshold for sensitivity
+  int thresh = 30; // threshold for sensitivity
 
-  if (gyro_y1 > thresh){
+  if (gyroY < -thresh){
     // going backwards
     bleString = bleString + "-16"; // add s to the string
-  }else if(gyro_y1 < -thresh){
+  }else if(gyroY > thresh){
     // going forward
     bleString = bleString + "-1A"; // add w to the string
   }
 
-  if (gyro_z1 > thresh){
+  if (gyroZ > thresh){
     // going right
     bleString = bleString + "-07"; // add d to the string
-  }else if (gyro_z1 < -thresh){
+  }else if (gyroZ < -thresh){
     bleString = bleString + "-04"; // add a to the string
   }
 
   // todo: this is super weird shit... make this better
   
-  if(digitalRead(shooting_button_pin)==LOW) {
+  if(shootingPressed) {
     Serial.println("shooting things");
     bleString = bleString + "-06";
-    shooting_button_pressed = false;
+    //shooting_button_pressed = false;
   }
-  if(digitalRead(drifting_button_pin)==LOW) {
+  if(driftingPressed) {
     Serial.println("drifting like fuck");
     bleString = bleString + "-19";
    }
