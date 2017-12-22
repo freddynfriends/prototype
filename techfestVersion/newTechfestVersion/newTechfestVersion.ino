@@ -109,17 +109,17 @@ void loop(void) {
   getSensorData();
 
 
-// only if controls are active we will send keyboard and mouse commands
+  // only if controls are active we will send keyboard and mouse commands
   if (controlsActive) {
 
 
     int thresh = 15; // threshold for sensitivity
 
-    if (gyroY < -thresh) {
+    if (gyroY > thresh) {
       // going backwards
       Keyboard.release('w');
       Keyboard.press('s');
-    } else if (gyroY > thresh) {
+    } else if (gyroY < -thresh) {
       // going forward
       Keyboard.release('s');
       Keyboard.press('w');
@@ -129,32 +129,32 @@ void loop(void) {
       Keyboard.release('s');
     }
 
-// Mouse movements:
-    if (gyroZ > thresh) {
+    // Mouse movements:
+    if (gyroZ > -360 - thresh && gyroZ < -270) {
       // going right
       Mouse.move(gyroZ * mouseScaling, 0, 0);
-    } else if (gyroZ < -thresh) {
+    } else if (gyroZ < -thresh && gyroZ > -90) {
       // going left
       Mouse.move(gyroZ * mouseScaling, 0, 0);
     }
 
-// drifting
+    // drifting
     if (!digitalRead(driftingButtonPin)) {
       Serial.println("drifting like fuck");
       Keyboard.press('v');
-    }else{
+    } else {
       Keyboard.release('v');
     }
 
   }
 
   // print sensor data
-    if (loopCount % 20 == 0) {
-      Serial.print("gyro x: "); Serial.print(gyroX);
-      Serial.print(" - gyro y: "); Serial.print(gyroY);
-      Serial.print(" - gyro z: "); Serial.print(gyroZ);
-      Serial.print(" - active: "); Serial.println(controlsActive); // Serial.print(" - acc. y: "); Serial.println(accel_y);
-    }
+  if (loopCount % 20 == 0) {
+    Serial.print("gyro x: "); Serial.print(gyroX);
+    Serial.print(" - gyro y: "); Serial.print(gyroY);
+    Serial.print(" - gyro z: "); Serial.print(gyroZ);
+    Serial.print(" - active: "); Serial.println(controlsActive); // Serial.print(" - acc. y: "); Serial.println(accel_y);
+  }
 
 
   loopCount += 1;
@@ -219,12 +219,12 @@ void getSensorData() {
   sensors_event_t event;
   bno.getEvent(&event);
 
-// get the x y z orientation
+  // get the x y z orientation
   gyroY = event.orientation.y;
   gyroZ = event.orientation.z;
   gyroX = event.orientation.x;
 
-// if not initialized, initialize sensor (setting the offset)
+  // if not initialized, initialize sensor (setting the offset)
   if (!initialized) {
     initializeSensors();
   }

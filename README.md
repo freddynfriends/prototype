@@ -29,3 +29,6 @@ This version uses the data from the orientation sensor and translates it into ke
 
 ### Version 2: BLE game controller (based on techfest version)
 This version uses the data from the orientation sensor and translates it only to keyboard commands sent via BLE. (Mouse commands where too laggy)
+
+The code considers the part of the usb connection to be the "Front" of the device. If you use a different setup you might have to change some lines in the code.
+
