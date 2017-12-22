@@ -1,14 +1,12 @@
 /*********************************************************************
- Freddy n' Friends first BLE prototype
+  Freddy n' Friends first BLE prototype
 
- The data from the orientation sensor will be sent via BLE as keyboard commands
+  The data from the orientation sensor will be sent via BLE as keyboard commands
 
-Using code from the adafruit BluefruitLE nRF51 atcommand example
 
-TODO:
-    not releasing keys all the time? 
-    drifting and shooting button stuff..
-    
+  Using code from the adafruit BluefruitLE nRF51 atcommand example
+
+
 *********************************************************************/
 
 #include <Arduino.h>
@@ -29,24 +27,24 @@ TODO:
 /*=========================================================================
     APPLICATION SETTINGS
 
-    FACTORYRESET_ENABLE       Perform a factory reset when running this sketch
-   
-                              Enabling this will put your Bluefruit LE module
+      FACTORYRESET_ENABLE       Perform a factory reset when running this sketch
+     
+                                Enabling this will put your Bluefruit LE module
                               in a 'known good' state and clear any config
                               data set in previous sketches or projects, so
-                              running this at least once is a good idea.
-   
-                              When deploying your project, however, you will
+                                running this at least once is a good idea.
+     
+                                When deploying your project, however, you will
                               want to disable factory reset by setting this
                               value to 0.  If you are making changes to your
-                              Bluefruit LE device via AT commands, and those
+                                Bluefruit LE device via AT commands, and those
                               changes aren't persisting across resets, this
                               is the reason why.  Factory reset will erase
                               the non-volatile memory where config data is
                               stored, setting it back to factory default
                               values.
-       
-                              Some sketches that require you to bond to a
+         
+                                Some sketches that require you to bond to a
                               central device (HID mouse, keyboard, etc.)
                               won't work at all with this feature enabled
                               since the factory reset will clear all of the
@@ -54,8 +52,8 @@ TODO:
                               central device won't be able to reconnect.
     MINIMUM_FIRMWARE_VERSION  Minimum firmware version to have some new features
     -----------------------------------------------------------------------*/
-    #define FACTORYRESET_ENABLE         0
-    #define MINIMUM_FIRMWARE_VERSION    "0.6.6"
+#define FACTORYRESET_ENABLE         0
+#define MINIMUM_FIRMWARE_VERSION    "0.6.6"
 /*=========================================================================*/
 
 
@@ -85,15 +83,26 @@ int driftingButtonPin = 9;
 
 
 // is the sensor initialized?
-boolean initialized = false; 
+boolean initialized = false;
 // data transmission on/off
 boolean volatile controlsActive = false;
 
 boolean volatile shootingPressed = false;
 boolean volatile driftingPressed = false;
 
+// variables for debouncing the buttons:
+
+// the following variables are unsigned longs because the time, measured in
+// milliseconds, will quickly become a bigger number than can be stored in an int.
+unsigned long lastDebounceControls = 0;// the last time the output pin was toggled
+unsigned long lastDebounceShooting = 0;
+unsigned long lastDebounceDrifting = 0;
+
+unsigned long debounceDelay = 50;// the debounce time
+
 // String passed as ATcommand via BLE
 String bleString = "";
+String lastbleString = "";
 
 // gyro values and offsets
 float gyroX = 0;
@@ -111,19 +120,19 @@ float offsetZ = 0;
 /**************************************************************************/
 void setup(void)
 {
- 
+
   Serial.begin(9600);
   Serial.println(F("Testing Sensor Movement to Keyboard output via bluetooth"));
   Serial.println(F("---------------------------------------"));
 
-    /* Initialise the sensor */
-  if(!bno.begin()) {
+  /* Initialise the sensor */
+  if (!bno.begin()) {
     /* There was a problem detecting the BNO055 ... check your connections */
     Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-    while(1);
+    while (1);
   }
   delay(1000);
-    
+
   bno.setExtCrystalUse(true);
 
   Serial.println("BNO055 running");
@@ -133,7 +142,7 @@ void setup(void)
   pinMode(controlSwitchPin, INPUT_PULLUP);
   pinMode(shootingButtonPin, INPUT_PULLUP);
   pinMode(driftingButtonPin, INPUT_PULLUP);
-  
+
   controlsActive = !digitalRead(controlSwitchPin);
 
   // Attach an interrupt to turn controls on
@@ -155,7 +164,7 @@ void setup(void)
   {
     /* Perform a factory reset to make sure everything is in a known state */
     Serial.println(F("Performing a factory reset: "));
-    if ( ! ble.factoryReset() ){
+    if ( ! ble.factoryReset() ) {
       error(F("Couldn't factory reset"));
     }
   }
@@ -185,7 +194,7 @@ void setup(void)
     }
   }
   ble.println("AT+BLEPOWERLEVEL=4"); //set transmit power to maximum, this will drain the battery faster
-  
+
   /* Add or remove service requires a reset */
   Serial.println(F("Performing a SW reset (service changes require a reset): "));
   if (! ble.reset() ) {
@@ -199,94 +208,138 @@ void setup(void)
     @brief  Constantly poll for new command or response data
 */
 /**************************************************************************/
-void loop(void){
+void loop(void) {
   int loopCount = 0;
   getSensorData();
-  
 
-  if(controlsActive) {   
+
+  if (controlsActive) {
     // Mouse movements, didn't work so well, mouse movements were lagging..
     /*
-    if (gyro_z1 > 15) {
+      if (gyro_z1 > 15) {
       // this is a tilt left
       ble.print("AT+BLEHIDMOUSEMOVE=");
       ble.println(-gyro_z1*mouse_scaling,0);
-    } else if (gyro_z1 < -15) {
+      } else if (gyro_z1 < -15) {
       ble.print("AT+BLEHIDMOUSEMOVE=");
-      ble.println(-gyro_z1*mouse_scaling,0); 
-    }*/
+      ble.println(-gyro_z1*mouse_scaling,0);
+      }*/
 
-     // call function that creates the string to be sent via bLE
-     createBLEString();
-     ble.println(bleString);
+    // call function that creates the string to be sent via bLE
+    createBLEString();
+    if (! lastbleString.equals(bleString)) {
+      ble.println(bleString);
+    }
+
 
   }
   // print sensor data
-  if(loopCount % 10 == 0) {
+  if (loopCount % 30 == 0) {
     Serial.print("gyro x: "); Serial.print(gyroX);
-    Serial.print(" - gyro y: "); Serial.print(gyroY); 
-    Serial.print(" - gyro z: "); Serial.print(gyroZ); 
+    Serial.print(" - gyro y: "); Serial.print(gyroY);
+    Serial.print(" - gyro z: "); Serial.print(gyroZ);
     Serial.print(" - active: "); Serial.println(controlsActive); // Serial.print(" - acc. y: "); Serial.println(accel_y);
   }
-  
-  
-  loopCount += 1;
 
-  delay(80);
+
+  loopCount += 1;
+  shootingPressed = false;
+  driftingPressed = false;
+  delay(100);
 
 }
 
 
 
 void toggleControls() {
-  controlsActive = !digitalRead(controlSwitchPin);
-  // every time we switch on/off the controls, we want to "calibrate"
-  // again
-  initialized = false;
+  boolean reading = !digitalRead(controlSwitchPin);
+  unsigned int interruptTime = millis();
+
+
+  if ((interruptTime - lastDebounceControls) > debounceDelay) {
+    lastDebounceControls = interruptTime;
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (reading != controlsActive) {
+      controlsActive = reading;
+      // every time we switch on/off the controls, we want to "calibrate"
+      // again
+      initialized = false;
+
+
+    }
+  }
 }
 
 void shoot() {
-  
-  shootingPressed = true;
+  boolean reading = !digitalRead(shootingButtonPin);
+  unsigned int interruptTime = millis();
+
+
+  if ((interruptTime - lastDebounceShooting) > debounceDelay) {
+    lastDebounceShooting = interruptTime;
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+    if (reading) {
+      shootingPressed = true;
+
+    }
+
+  }
 }
 
 void toggleDriftingButton() {
-  
-  driftingPressed = !driftingPressed;
+  boolean reading = !digitalRead(controlSwitchPin);
+  unsigned int interruptTime = millis();
+
+
+  if ((interruptTime - lastDebounceDrifting) > debounceDelay) {
+    lastDebounceDrifting = interruptTime;
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (reading != driftingPressed) {
+      driftingPressed = reading;
+    }
+  }
 }
 
-void initializeSensors(){
+void initializeSensors() {
   Serial.println("initializing the gyros");
-      
-  // offset_x1 = gyro_x1;
+
   offsetY = gyroY;
   offsetZ = gyroZ;
   offsetX = gyroX;
-  
+
   initialized = true;
 }
 
-void getSensorData(){
-  /* Get a new sensor event */ 
-  sensors_event_t event; 
+void getSensorData() {
+  /* Get a new sensor event */
+  sensors_event_t event;
   bno.getEvent(&event);
-  
-  // gyro_x1 = event.orientation.x;
+
+// get the x y z orientation
   gyroY = event.orientation.y;
   gyroZ = event.orientation.z;
   gyroX = event.orientation.x;
 
-   if(!initialized){
-      initializeSensors();
-   }
+// if not initialized, initialize sensor (will be called when controls are switched on/off
+  if (!initialized) {
+    initializeSensors();
+  }
   // substract offset:
   gyroX = gyroX - offsetX;
   gyroY = gyroY - offsetY;
   gyroZ = gyroZ - offsetZ;
 }
 
-void createBLEString(){
-
+void createBLEString() {
+  lastbleString = bleString;
+  
   bleString = "AT+BLEKEYBOARDCODE=00-00"; // string always has to start with 00-00, first byte: modifier (00), second byte always 00
   // using hex-codes for keyboard commands
   // A = 0x04
@@ -295,43 +348,46 @@ void createBLEString(){
   // S = 0x16
   // V = 0x19
   // W = 0x1A
-  
-  
+
+
   // to release all keys: 00-00
   // up to 6 keys can be pressed simultaneously: eg: 00-00-04-05-07-16-1A-08 --> acdswe
 
   // gyro values:
-  // y for forward and backwards (in this prototype positive values = backwards, negative = forwards)
+  // y for forward and backwards (in this prototype positive values = forward, negative = backward)
   // z for left and right (in this prototype positive = right, negative = left)
 
   int thresh = 30; // threshold for sensitivity
 
-  if (gyroY < -thresh){
+  // this depends on how you put the sensor on the breadboard. In our case tilting the board down to the front means positive y values
+  // and tilting down to the back means negative y values
+  if (gyroY < -thresh) {
     // going backwards
     bleString = bleString + "-16"; // add s to the string
-  }else if(gyroY > thresh){
+  } else if (gyroY > thresh) {
     // going forward
     bleString = bleString + "-1A"; // add w to the string
   }
 
-  if (gyroZ > thresh){
+  // this depends on how you put the sensor on the breadboard. In our case tilting the sensor down to the left
+  // means z values between 360 and 270, and tilting it down to the right = z values between 0 and 90
+  if (gyroZ > thresh && gyroZ < 90) {
     // going right
     bleString = bleString + "-07"; // add d to the string
-  }else if (gyroZ < -thresh){
+  } else if (gyroZ < 360 - thresh && gyroZ > 270 ) {
     bleString = bleString + "-04"; // add a to the string
   }
 
-  // todo: this is super weird shit... make this better
-  
-  if(shootingPressed) {
+  if (shootingPressed) {
     Serial.println("shooting things");
     bleString = bleString + "-06";
     //shooting_button_pressed = false;
   }
-  if(driftingPressed) {
+  if (driftingPressed) {
     Serial.println("drifting like fuck");
     bleString = bleString + "-19";
-   }
-   
+  }
+  
+
 }
 
