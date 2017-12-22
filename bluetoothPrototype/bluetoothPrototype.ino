@@ -354,27 +354,28 @@ void createBLEString() {
   // up to 6 keys can be pressed simultaneously: eg: 00-00-04-05-07-16-1A-08 --> acdswe
 
   // gyro values:
-  // y for forward and backwards (in this prototype positive values = forward, negative = backward)
+  // y for forward and backwards (in this prototype positive values = backward negative = forward)
   // z for left and right (in this prototype positive = right, negative = left)
 
   int thresh = 30; // threshold for sensitivity
 
-  // this depends on how you put the sensor on the breadboard. In our case tilting the board down to the front means positive y values
-  // and tilting down to the back means negative y values
-  if (gyroY < -thresh) {
+  // this depends on how you put the sensor on the breadboard. In our case tilting the board down to the front means negative y values
+  // and tilting down to the back means positive y values
+  if (gyroY > thresh) {
     // going backwards
     bleString = bleString + "-16"; // add s to the string
-  } else if (gyroY > thresh) {
+  } else if (gyroY < -thresh) {
     // going forward
     bleString = bleString + "-1A"; // add w to the string
   }
 
-  // this depends on how you put the sensor on the breadboard. In our case tilting the sensor down to the left
-  // means z values between 360 and 270, and tilting it down to the right = z values between 0 and 90
-  if (gyroZ > thresh && gyroZ < 90) {
-    // going right
+  // this depends on how you put the sensor on the breadboard. In our case tilting the sensor down to the right
+  // means z values between -360 and -270, and tilting it down to the left = z values between 0 and -90
+  if (gyroZ < -thresh && gyroZ > -90) {
+    // going left
     bleString = bleString + "-07"; // add d to the string
-  } else if (gyroZ < 360 - thresh && gyroZ > 270 ) {
+  } else if (gyroZ > -360 - thresh && gyroZ < -270 ) {
+    // going right
     bleString = bleString + "-04"; // add a to the string
   }
 
